@@ -11,7 +11,7 @@ if __name__ == '__main__':
 
 
     # read the file and parse the first and only sheet (need python xlrd module)
-    f = pd.ExcelFile(capsule_text_file)
+    f = pd.ExcelFile(data_dir_path+capsule_text_file)
     all = f.parse(parse_cols=[2, 3, 6, 7], skiprows=4, header=1)
 
     # data comes in two columns, produce a single lookup table from that

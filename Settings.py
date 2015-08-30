@@ -1,6 +1,6 @@
 __author__ = 'Dworkin'
 
-data_dir_path = "/Users/Dworkin/Desktop/Machine Learning/Kaggle/Coupon Purchase Prediction/DATA/"
+data_dir_path = "../DATA/"
 capsule_text_file = 'CAPSULE_TEXT_Translation.xlsx'
 
 coupon_list_train_before_transl = 'coupon_list_train.csv'
