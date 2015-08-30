@@ -61,4 +61,5 @@ if __name__ == '__main__':
     last_purchase_withdraw = withdraw_purchase.groupby(['USER_ID_hash'],sort=False, as_index=False)['I_DATE'].max()
 
     updated_withdraw_users = pd.merge(users, last_purchase_withdraw, on='USER_ID_hash')
+    pass
 
