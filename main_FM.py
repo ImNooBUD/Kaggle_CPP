@@ -10,6 +10,7 @@ import numpy as np
 import datetime
 import pickle
 import io
+from sklearn.svm import LinearSVC
 
 
 from sklearn.feature_extraction import DictVectorizer
@@ -108,7 +109,7 @@ def prepare_train_matrix(users_df, pref_df, coupon_desc_df, view_log_df):
         else:
             rez_coo_matrix = sp.vstack([rez_coo_matrix, temp_coo_matrix])
 
-    return rez_coo_matrix
+    return rez_coo_matrix, coupon_purchase
 
 def prepare_view_log_df (view_log):
 
@@ -126,29 +127,48 @@ if __name__ == '__main__':
     #dirty_trick()
 
     #train data
+    """
     users = pd.DataFrame.from_csv(data_dir_path+Settings.user_list, index_col=False)
     coupons = pd.DataFrame.from_csv(data_dir_path+Settings.coupon_list_train, index_col=False)
-    view_log = pd.DataFrame.from_csv(data_dir_path+Settings.coupon_visit_train, index_col=False)
+
     purchase_log = pd.DataFrame.from_csv(data_dir_path+Settings.coupon_detail_train, index_col=False)
     coupon_area = pd.DataFrame.from_csv(data_dir_path+Settings.coupon_area_train, index_col=False)
     prefect = pd.DataFrame.from_csv(data_dir_path+Settings.prefecture_locations, index_col=False)
     prefect.columns = ['PREF_NAME', 'PREFECTUAL_OFFICE', 'LATITUDE', 'LONGITUDE']
     #test data
     coupons_test = pd.DataFrame.from_csv(data_dir_path+Settings.coupon_list_test, index_col=False)
-
+    """
+    view_log = pd.DataFrame.from_csv(data_dir_path+Settings.coupon_visit_train, index_col=False)
     view_log = prepare_view_log_df(view_log)
-    rez_coo_matrix = \
+
+    """
+    rez_coo_matrix, y_vect = \
         prepare_train_matrix(users_df=users, pref_df=prefect, coupon_desc_df=coupons, view_log_df=view_log)
 
     print rez_coo_matrix.shape
     print 'Matrix DONE! Trying to save'
 
-    shape_w = io.open('../total_matrix_shape.pickle', 'wb')
-    pickle.dump(rez_coo_matrix.shape, shape_w)
-    shape_w.close()
-    rez_coo_matrix.data.tofile('../total_matrix_data')
-    rez_coo_matrix.col.tofile('../total_matrix_col')
-    rez_coo_matrix.row.tofile('../total_matrix_row')
+    np.save('../total_matrix_cols.npy', rez_coo_matrix.col)
+    np.save('../total_matrix_data.npy', rez_coo_matrix.data)
+    np.save('../total_matrix_row.npy', rez_coo_matrix.row)
+    np.save('../total_matrix_shape.npy', rez_coo_matrix.shape)
+
+    """
+
+    cols = np.load('../total_matrix_cols.npy')
+    data = np.load('../total_matrix_data.npy')
+    rows = np.load('../total_matrix_row.npy')
+    shape = np.load('../total_matrix_shape.npy')
+
+    rez_coo_matrix = sp.coo_matrix((data, (rows, cols)), shape)
+    y_vect = view_log['PURCHASE_FLG']
+
+
+    clf = LinearSVC(loss='l2', penalty='l2', dual=False)
+
+    clf.fit(rez_coo_matrix, y_vect)
+    print 'DONE'
+
 
     """
     withdraw_purchase = view_log[
