@@ -75,6 +75,7 @@ def prepare_train_matrix(users_df, pref_df, coupon_desc_df, view_log_df):
 
     array_of_view_log_df = split_dataframe(view_log_df, 100000)
     rez_coo_matrix = None
+    y_train = None
 
     for part_df in array_of_view_log_df:
         merge_view_and_coupons = pd.merge(part_df, coupon_desc_df, how='left',
@@ -91,7 +92,7 @@ def prepare_train_matrix(users_df, pref_df, coupon_desc_df, view_log_df):
         coupon_discount_price = [[x] for x in merge_total['DISCOUNT_PRICE']]
         coupon_pref = [{'PREF_NAME': x} for x in merge_total['ken_name']]
 
-        coupon_purchase = [[x] for x in merge_total['PURCHASE_FLG']]
+        coupon_purchase = [x for x in merge_total['PURCHASE_FLG']]
 
         temp_coo_matrix = sp.hstack([
                 user_hash_vect.transform(users_hash),
@@ -109,7 +110,13 @@ def prepare_train_matrix(users_df, pref_df, coupon_desc_df, view_log_df):
         else:
             rez_coo_matrix = sp.vstack([rez_coo_matrix, temp_coo_matrix])
 
-    return rez_coo_matrix, coupon_purchase
+        if y_train is None:
+            y_train = coupon_purchase
+        else:
+            y_train.extend(coupon_purchase)
+
+
+    return rez_coo_matrix, y_train
 
 def prepare_view_log_df (view_log):
 
@@ -127,22 +134,20 @@ if __name__ == '__main__':
     #dirty_trick()
 
     #train data
-    """
+
     users = pd.DataFrame.from_csv(data_dir_path+Settings.user_list, index_col=False)
     coupons = pd.DataFrame.from_csv(data_dir_path+Settings.coupon_list_train, index_col=False)
-
+    view_log = pd.DataFrame.from_csv(data_dir_path+Settings.coupon_visit_train, index_col=False)
+    view_log = prepare_view_log_df(view_log)
     purchase_log = pd.DataFrame.from_csv(data_dir_path+Settings.coupon_detail_train, index_col=False)
     coupon_area = pd.DataFrame.from_csv(data_dir_path+Settings.coupon_area_train, index_col=False)
     prefect = pd.DataFrame.from_csv(data_dir_path+Settings.prefecture_locations, index_col=False)
     prefect.columns = ['PREF_NAME', 'PREFECTUAL_OFFICE', 'LATITUDE', 'LONGITUDE']
     #test data
     coupons_test = pd.DataFrame.from_csv(data_dir_path+Settings.coupon_list_test, index_col=False)
-    """
-    view_log = pd.DataFrame.from_csv(data_dir_path+Settings.coupon_visit_train, index_col=False)
-    view_log = prepare_view_log_df(view_log)
 
-    """
-    rez_coo_matrix, y_vect = \
+
+    rez_coo_matrix, y_train = \
         prepare_train_matrix(users_df=users, pref_df=prefect, coupon_desc_df=coupons, view_log_df=view_log)
 
     print rez_coo_matrix.shape
@@ -152,6 +157,7 @@ if __name__ == '__main__':
     np.save('../total_matrix_data.npy', rez_coo_matrix.data)
     np.save('../total_matrix_row.npy', rez_coo_matrix.row)
     np.save('../total_matrix_shape.npy', rez_coo_matrix.shape)
+    np.save('../y_train.npy', y_train)
 
     """
 
@@ -161,12 +167,13 @@ if __name__ == '__main__':
     shape = np.load('../total_matrix_shape.npy')
 
     rez_coo_matrix = sp.coo_matrix((data, (rows, cols)), shape)
-    y_vect = view_log['PURCHASE_FLG']
 
+    y_train = np.load('../y_train.npy')
 
+    """
     clf = LinearSVC(loss='l2', penalty='l2', dual=False)
 
-    clf.fit(rez_coo_matrix, y_vect)
+    clf.fit(rez_coo_matrix, y_train)
     print 'DONE'
 
 
