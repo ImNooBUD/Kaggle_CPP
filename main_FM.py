@@ -1,5 +1,3 @@
-from cvxopt.modeling import op
-
 __author__ = 'Dworkin'
 
 import Settings
@@ -10,9 +8,7 @@ import numpy as np
 import datetime
 import pickle
 import io
-from sklearn.svm import LinearSVC
-
-
+from sklearn.linear_model import LogisticRegression
 from sklearn.feature_extraction import DictVectorizer
 
 
@@ -59,6 +55,7 @@ def split_dataframe (df, split_step):
 
     return array_of_df
 
+#TODO change - input valuse must also include vectorizers
 def prepare_train_matrix(users_df, pref_df, coupon_desc_df, view_log_df):
     """
 
@@ -80,7 +77,10 @@ def prepare_train_matrix(users_df, pref_df, coupon_desc_df, view_log_df):
     for part_df in array_of_view_log_df:
         merge_view_and_coupons = pd.merge(part_df, coupon_desc_df, how='left',
                                           left_on='VIEW_COUPON_ID_hash', right_on='COUPON_ID_hash')
-        merge_total = pd.merge(merge_view_and_coupons, users, how='left', on='USER_ID_hash')
+        merge_total = pd.merge(merge_view_and_coupons, users_df, how='left', on='USER_ID_hash')
+
+        #think about how to deal with NaN values
+        merge_total = merge_total[pd.notnull(merge_total['PRICE_RATE']) & pd.notnull(merge_total['DISCOUNT_PRICE'])]
 
         users_hash = [{'USER_ID_hash': x} for x in merge_total['USER_ID_hash']]
         users_sex = [{'SEX_ID': x} for x in merge_total['SEX_ID']]
@@ -126,7 +126,45 @@ def prepare_view_log_df (view_log):
     view_log = view_log.drop_duplicates(['PURCHASE_FLG', 'I_DATE', 'VIEW_COUPON_ID_hash', 'USER_ID_hash'])
     return view_log
 
+#TODO change - input valuse must also include vectorizers
+def get_best_coupons(users_df, pref_df, coupon_desc_df, classifier, test_coupons_df):
 
+    user_hash_vect = get_feature_vectorizer(users_df, ['USER_ID_hash'])
+    sex_vect = get_feature_vectorizer(users_df, ['SEX_ID'])
+    prefect_vect = get_feature_vectorizer(pref_df, ['PREF_NAME'])
+    capsule_text_vect = get_feature_vectorizer(coupon_desc_df, ['CAPSULE_TEXT'])
+
+    users_df = users_df.set_index([[0]*len(users_df)])
+    test_coupons_df = test_coupons_df.set_index([[0]*len(test_coupons_df)])
+    df_cartesian = users_df.join(test_coupons_df, how='outer')
+
+
+    users_hash = [{'USER_ID_hash': x} for x in df_cartesian['USER_ID_hash']]
+    users_sex = [{'SEX_ID': x} for x in df_cartesian['SEX_ID']]
+    users_age = [[x] for x in df_cartesian['AGE']]
+    users_pref = [{'PREF_NAME': x} for x in df_cartesian['PREF_NAME']]
+
+    coupon_capsule_text = [{'CAPSULE_TEXT': x} for x in df_cartesian['CAPSULE_TEXT']]
+    coupon_price_rate = [[x] for x in df_cartesian['PRICE_RATE']]
+    coupon_discount_price = [[x] for x in df_cartesian['DISCOUNT_PRICE']]
+    coupon_pref = [{'PREF_NAME': x} for x in df_cartesian['ken_name']]
+
+    test_coo_matrix = sp.hstack([
+                user_hash_vect.transform(users_hash),
+                sex_vect.transform(users_sex),
+                prefect_vect.transform(users_pref),
+                users_age,
+                capsule_text_vect.transform(coupon_capsule_text),
+                coupon_price_rate,
+                coupon_discount_price,
+                prefect_vect.transform(coupon_pref)
+            ])
+
+    purch_chance = classifier.predict_proba(test_coo_matrix)
+
+    df_cartesian.loc[:, 'purch_chance'] = purch_chance
+
+    return df_cartesian
 
 
 if __name__ == '__main__':
@@ -146,7 +184,7 @@ if __name__ == '__main__':
     #test data
     coupons_test = pd.DataFrame.from_csv(data_dir_path+Settings.coupon_list_test, index_col=False)
 
-
+    """
     rez_coo_matrix, y_train = \
         prepare_train_matrix(users_df=users, pref_df=prefect, coupon_desc_df=coupons, view_log_df=view_log)
 
@@ -157,8 +195,7 @@ if __name__ == '__main__':
     np.save('../total_matrix_data.npy', rez_coo_matrix.data)
     np.save('../total_matrix_row.npy', rez_coo_matrix.row)
     np.save('../total_matrix_shape.npy', rez_coo_matrix.shape)
-    np.save('../y_train.npy', y_train)
-
+    np.save('../y_train.npy', np.asarray(y_train))
     """
 
     cols = np.load('../total_matrix_cols.npy')
@@ -168,13 +205,15 @@ if __name__ == '__main__':
 
     rez_coo_matrix = sp.coo_matrix((data, (rows, cols)), shape)
 
-    y_train = np.load('../y_train.npy')
+    y_train = np.asarray(np.load('../y_train.npy'))
 
-    """
-    clf = LinearSVC(loss='l2', penalty='l2', dual=False)
 
+    #clf = LinearSVC(loss='l2', penalty='l2', dual=False)
+    clf = LogisticRegression(penalty='l2', dual=False)
     clf.fit(rez_coo_matrix, y_train)
     print 'DONE'
+    rez = get_best_coupons(users_df=users, pref_df=prefect, coupon_desc_df=coupons, classifier=clf,
+                                                                                        test_coupons_df=coupons_test)
 
 
     """
