@@ -127,7 +127,7 @@ def prepare_view_log_df (view_log):
     return view_log
 
 #TODO change - input valuse must also include vectorizers
-def get_best_coupons(users_df, pref_df, coupon_desc_df, classifier, test_coupons_df):
+def get_best_coupons(users_df, pref_df, coupon_desc_df, classifier, test_coupons_df, split_step = 25000):
 
     user_hash_vect = get_feature_vectorizer(users_df, ['USER_ID_hash'])
     sex_vect = get_feature_vectorizer(users_df, ['SEX_ID'])
@@ -138,31 +138,39 @@ def get_best_coupons(users_df, pref_df, coupon_desc_df, classifier, test_coupons
     test_coupons_df = test_coupons_df.set_index([[0]*len(test_coupons_df)])
     df_cartesian = users_df.join(test_coupons_df, how='outer')
 
+    array_of_df_cartesian = split_dataframe(df_cartesian, split_step)
+    rez_test_coo_matrix = None
 
-    users_hash = [{'USER_ID_hash': x} for x in df_cartesian['USER_ID_hash']]
-    users_sex = [{'SEX_ID': x} for x in df_cartesian['SEX_ID']]
-    users_age = [[x] for x in df_cartesian['AGE']]
-    users_pref = [{'PREF_NAME': x} for x in df_cartesian['PREF_NAME']]
+    for partition_df in array_of_df_cartesian:
+        users_hash = [{'USER_ID_hash': x} for x in partition_df['USER_ID_hash']]
+        users_sex = [{'SEX_ID': x} for x in partition_df['SEX_ID']]
+        users_age = [[x] for x in partition_df['AGE']]
+        users_pref = [{'PREF_NAME': x} for x in partition_df['PREF_NAME']]
 
-    coupon_capsule_text = [{'CAPSULE_TEXT': x} for x in df_cartesian['CAPSULE_TEXT']]
-    coupon_price_rate = [[x] for x in df_cartesian['PRICE_RATE']]
-    coupon_discount_price = [[x] for x in df_cartesian['DISCOUNT_PRICE']]
-    coupon_pref = [{'PREF_NAME': x} for x in df_cartesian['ken_name']]
+        coupon_capsule_text = [{'CAPSULE_TEXT': x} for x in partition_df['CAPSULE_TEXT']]
+        coupon_price_rate = [[x] for x in partition_df['PRICE_RATE']]
+        coupon_discount_price = [[x] for x in partition_df['DISCOUNT_PRICE']]
+        coupon_pref = [{'PREF_NAME': x} for x in partition_df['ken_name']]
 
-    test_coo_matrix = sp.hstack([
-                user_hash_vect.transform(users_hash),
-                sex_vect.transform(users_sex),
-                prefect_vect.transform(users_pref),
-                users_age,
-                capsule_text_vect.transform(coupon_capsule_text),
-                coupon_price_rate,
-                coupon_discount_price,
-                prefect_vect.transform(coupon_pref)
-            ])
+        temp_coo_matrix = sp.hstack([
+                    user_hash_vect.transform(users_hash),
+                    sex_vect.transform(users_sex),
+                    prefect_vect.transform(users_pref),
+                    users_age,
+                    capsule_text_vect.transform(coupon_capsule_text),
+                    coupon_price_rate,
+                    coupon_discount_price,
+                    prefect_vect.transform(coupon_pref)
+                ])
 
-    purch_chance = classifier.predict_proba(test_coo_matrix)
+        if rez_test_coo_matrix is None:
+            rez_test_coo_matrix = temp_coo_matrix
+        else:
+            rez_test_coo_matrix = sp.vstack([rez_test_coo_matrix, temp_coo_matrix])
 
-    df_cartesian.loc[:, 'purch_chance'] = purch_chance
+    purch_chance = classifier.predict_proba(rez_test_coo_matrix)
+
+    df_cartesian.loc[:, 'purch_chance'] = purch_chance[:, 1]
 
     return df_cartesian
 
@@ -214,7 +222,21 @@ if __name__ == '__main__':
     print 'DONE'
     rez = get_best_coupons(users_df=users, pref_df=prefect, coupon_desc_df=coupons, classifier=clf,
                                                                                         test_coupons_df=coupons_test)
+    rez.to_csv('../rez_prediction.csv', index=False)
 
+
+    top_coupons = pd.DataFrame(columns=['USER_ID_hash', 'PURCHASED_COUPONS'])
+    for user in rez['USER_ID_hash'].unique():
+        temp_dict = {'USER_ID_hash': user, 'PURCHASED_COUPONS': None}
+        sorted_user_prob_df = rez[rez['USER_ID_hash'] == user][['COUPON_ID_hash', 'purch_chance']].sort('purch_chance', ascending=False)
+
+        top_10_one_string = ''
+        for coupon_hash in sorted_user_prob_df.head(10)['COUPON_ID_hash']:
+            top_10_one_string += coupon_hash + ' '
+        temp_dict['PURCHASED_COUPONS'] = top_10_one_string
+        top_coupons = top_coupons.append(temp_dict, ignore_index=True)
+
+    top_coupons.to_csv('../predicted_top_10_purchases.csv', index=False)
 
     """
     withdraw_purchase = view_log[
